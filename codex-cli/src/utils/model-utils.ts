@@ -1,4 +1,4 @@
-import { OPENAI_API_KEY } from "./config";
+import { OPENAI_API_KEY, OPENAI_BASE_URL } from "./config";
 import OpenAI from "openai";
 
 const MODEL_LIST_TIMEOUT_MS = 2_000; // 2 seconds
@@ -15,25 +15,25 @@ export const RECOMMENDED_MODELS: Array<string> = ["o4-mini", "o3"];
 let modelsPromise: Promise<Array<string>> | null = null;
 
 async function fetchModels(): Promise<Array<string>> {
-  // If the user has not configured an API key we cannot hit the network.
-  if (!OPENAI_API_KEY) {
-    return RECOMMENDED_MODELS;
-  }
-
   try {
-    const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+    // Construct OpenAI client pointing to Ollama-compatible API
+    const clientOptions: Record<string, any> = {};
+    if (OPENAI_API_KEY) clientOptions.apiKey = OPENAI_API_KEY;
+    if (OPENAI_BASE_URL) clientOptions.baseURL = OPENAI_BASE_URL;
+    const openai = new OpenAI(clientOptions);
+    // Fetch the list of models from the /models endpoint
     const list = await openai.models.list();
 
     const models: Array<string> = [];
-    for await (const model of list as AsyncIterable<{ id?: string }>) {
-      if (model && typeof model.id === "string") {
-        models.push(model.id);
+    for await (const m of list as AsyncIterable<{ id?: string }>) {
+      if (m && typeof m.id === "string") {
+        models.push(m.id);
       }
     }
-
     return models.sort();
   } catch {
-    return [];
+    // On error, fall back to recommended list
+    return RECOMMENDED_MODELS;
   }
 }
 

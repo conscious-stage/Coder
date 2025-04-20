@@ -33,7 +33,10 @@ export const INSTRUCTIONS_FILEPATH = join(CONFIG_DIR, "instructions.md");
 
 export const OPENAI_TIMEOUT_MS =
   parseInt(process.env["OPENAI_TIMEOUT_MS"] || "0", 10) || undefined;
-export const OPENAI_BASE_URL = process.env["OPENAI_BASE_URL"] || "";
+// Base URL for Ollama OpenAI-compatible API (local Ollama server)
+// Default points to http://localhost:3000/v1 where the Ollama API exposes OpenAI-compatible endpoints
+export const OPENAI_BASE_URL =
+  process.env["OPENAI_BASE_URL"] || "http://localhost:3000/v1";
 export let OPENAI_API_KEY = process.env["OPENAI_API_KEY"] || "";
 
 export function setApiKey(apiKey: string): void {
