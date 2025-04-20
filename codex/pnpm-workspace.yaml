@@ -1,7 +1,0 @@
-packages:
-  - codex-cli
-  - docs
-  - packages/*
-
-ignoredBuiltDependencies:
-  - esbuild
