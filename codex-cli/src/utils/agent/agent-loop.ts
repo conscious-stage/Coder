@@ -1,9 +1,11 @@
 import { createOpenAIClient } from './api-client.js';
 import { handleFunctionCall } from './function-call-handler.js';
+import { prefix } from './prefix.js';
 import { processStream } from './stream-handler.js';
 import { handleAPIError, MAX_RETRIES, RATE_LIMIT_RETRY_WAIT_MS } from './error-handling.js';
 import { log, isLoggingEnabled } from './log.js';
 import { getSessionId, setSessionId, setCurrentModel } from '../session.js';
+import { OPENAI_BASE_URL } from '../config.js';
 import { randomUUID } from 'node:crypto';
 
 const alreadyProcessedResponses = new Set();
@@ -124,7 +126,50 @@ export class AgentLoop {
     };
     
     try {
-      // Main loop processing input and responses
+      // If we're pointing at a local Ollama OpenAI-compatible API, use chat.completions
+      if (OPENAI_BASE_URL.startsWith('http://localhost')) {
+        // Build chat messages for Ollama: include agent prefix + user instructions
+        const messages = [];
+        const systemContent = [prefix, this.instructions]
+          .filter(Boolean)
+          .join('\n');
+        if (systemContent) {
+          messages.push({ role: 'system', content: systemContent });
+        }
+        for (const item of turnInput) {
+          // Unified user messages or input_text map to chat user content
+          if ((item.type === 'message' && item.role === 'user') || item.type === 'input_text') {
+            const text =
+              item.type === 'input_text'
+                ? item.text
+                : item.content?.[0]?.text;
+            if (text) messages.push({ role: 'user', content: text });
+          }
+        }
+        // Stream via chat.completions
+        const stream = await this.oai.chat.completions.create({
+          model: this.model,
+          stream: true,
+          messages,
+        });
+        // Stream each assistant delta as a message with unique id
+        let deltaCount = 0;
+        for await (const chunk of stream) {
+          const delta = chunk.choices?.[0]?.delta?.content;
+          if (delta) {
+            const msg = {
+              id: `ollama-${Date.now()}-${deltaCount++}`,
+              type: 'message',
+              role: 'assistant',
+              content: [{ type: 'output_text', text: delta }]
+            };
+            stageItem(msg);
+          }
+        }
+        this.onLoading(false);
+        return;
+      }
+      // Main loop processing input and responses (unified OpenAI API)
       await this.processInputAndResponses(turnInput, thinkingStart, thisGeneration, stageItem, lastResponseId, staged);
     } catch (err) {
       await handleAPIError(err, this.onItem, this.onLoading);
