@@ -133,7 +133,7 @@ export class AgentLoop {
         // JSON-driven command loop for local Ollama/Deepseek
         // Build initial system+user messages
         const messages = [];
-        const systemContent = [prefix, jsonPrefix, this.instructions].filter(Boolean).join('\n');
+        const systemContent = [jsonPrefix, this.instructions].filter(Boolean).join('\n');
         messages.push({ role: 'system', content: systemContent });
         for (const item of turnInput) {
           stageItem(item);
