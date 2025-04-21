@@ -13,7 +13,26 @@ app.use(bodyParser.json());
 
 // Constants
 const OLLAMA_BASE_URL = 'http://localhost:11434';
-const AVAILABLE_MODELS = ['qwen2.5:0.5b', 'deepseek-r1:1.5b'];
+let AVAILABLE_MODELS = []; // Will be populated dynamically
+
+// Function to fetch available models from Ollama
+async function fetchAvailableModels() {
+  try {
+    console.log('Fetching available models from Ollama...');
+    const response = await axios.get(`${OLLAMA_BASE_URL}/api/tags`);
+    if (response.data && response.data.models) {
+      AVAILABLE_MODELS = response.data.models.map(model => model.name);
+      console.log(`Successfully loaded ${AVAILABLE_MODELS.length} models from Ollama`);
+      console.log(`Available models: ${AVAILABLE_MODELS.join(', ')}`);
+    } else {
+      console.error('Unexpected response format from Ollama API:', response.data);
+      AVAILABLE_MODELS = []; // Reset to empty if format is unexpected
+    }
+  } catch (error) {
+    console.error('Error fetching models from Ollama:', error.message);
+    // Don't update AVAILABLE_MODELS if there was an error
+  }
+}
 
 // Helper function to transform OpenAI-style requests to Ollama format
 function transformToOllamaRequest(openaiRequest, model) {
@@ -81,7 +100,10 @@ function transformToOpenAIResponse(ollamaResponse, model) {
 }
 
 // List available models (OpenAI-style endpoint)
-app.get('/v1/models', (req, res) => {
+app.get('/v1/models', async (req, res) => {
+  // Refresh models list before responding
+  await fetchAvailableModels();
+  
   const formattedModels = AVAILABLE_MODELS.map(model => ({
     id: model,
     object: 'model',
@@ -98,7 +120,21 @@ app.get('/v1/models', (req, res) => {
 // Chat completions endpoint (OpenAI-style) and unified /responses compatibility
 app.post(['/v1/chat/completions', '/v1/responses'], async (req, res) => {
   try {
-    const model = req.body.model || 'qwen2.5:0.5b';
+    // If models list is empty, try to fetch models first
+    if (AVAILABLE_MODELS.length === 0) {
+      await fetchAvailableModels();
+    }
+    
+    const model = req.body.model || (AVAILABLE_MODELS.length > 0 ? AVAILABLE_MODELS[0] : null);
+    
+    if (!model) {
+      return res.status(400).json({ 
+        error: {
+          message: "No model specified and no default models available from Ollama",
+          type: 'invalid_request_error'
+        }
+      });
+    }
     
     // Log the incoming request
     console.log('\n===== INCOMING REQUEST =====');
@@ -118,57 +154,126 @@ app.post(['/v1/chat/completions', '/v1/responses'], async (req, res) => {
     }
 
     // Replace your streaming section with this OpenAI-compatible version
-if (req.body.stream === true) {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-
-  const ollamaRequest = transformToOllamaRequest(req.body, model);
-  
-  console.log('\n===== STREAMING REQUEST TO OLLAMA =====');
-  console.log(`Model: ${model}`);
-  console.log(`Prompt: ${ollamaRequest.prompt}`);
-  console.log('======================================\n');
-  
-  try {
-    const response = await axios.post(`${OLLAMA_BASE_URL}/api/generate`, ollamaRequest, {
-      responseType: 'stream'
-    });
-
-    console.log('===== STREAMING RESPONSE STARTED =====');
-    let fullResponse = '';
-    let buffer = '';
+    if (req.body.stream === true) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
     
-    // Check if this is a request from Codex-CLI
-    const isCodexRequest = req.path === '/v1/responses';
-    
-    response.data.on('data', (chunk) => {
+      const ollamaRequest = transformToOllamaRequest(req.body, model);
+      
+      console.log('\n===== STREAMING REQUEST TO OLLAMA =====');
+      console.log(`Model: ${model}`);
+      console.log(`Prompt: ${ollamaRequest.prompt}`);
+      console.log('======================================\n');
+      
       try {
-        // Add the new chunk to our buffer
-        buffer += chunk.toString();
+        const response = await axios.post(`${OLLAMA_BASE_URL}/api/generate`, ollamaRequest, {
+          responseType: 'stream'
+        });
+    
+        console.log('===== STREAMING RESPONSE STARTED =====');
+        let fullResponse = '';
+        let buffer = '';
         
-        // Try to extract complete JSON objects from the buffer
-        let processBuffer = () => {
-          // Find the position of the first complete JSON object
-          const jsonEndIndex = buffer.indexOf('\n');
-          
-          // If we found a complete line (which should be a JSON object)
-          if (jsonEndIndex !== -1) {
-            // Extract the JSON string
-            const jsonStr = buffer.substring(0, jsonEndIndex);
-            // Remove the processed part from the buffer
-            buffer = buffer.substring(jsonEndIndex + 1);
+        // Check if this is a request from Codex-CLI
+        const isCodexRequest = req.path === '/v1/responses';
+        
+        response.data.on('data', (chunk) => {
+          try {
+            // Add the new chunk to our buffer
+            buffer += chunk.toString();
             
-            try {
-              // Parse the JSON
-              const data = JSON.parse(jsonStr);
+            // Try to extract complete JSON objects from the buffer
+            let processBuffer = () => {
+              // Find the position of the first complete JSON object
+              const jsonEndIndex = buffer.indexOf('\n');
               
-              // Process the data
+              // If we found a complete line (which should be a JSON object)
+              if (jsonEndIndex !== -1) {
+                // Extract the JSON string
+                const jsonStr = buffer.substring(0, jsonEndIndex);
+                // Remove the processed part from the buffer
+                buffer = buffer.substring(jsonEndIndex + 1);
+                
+                try {
+                  // Parse the JSON
+                  const data = JSON.parse(jsonStr);
+                  
+                  // Process the data
+                  fullResponse += data.response || '';
+                  
+                  // Different SSE format based on request type
+                  if (isCodexRequest) {
+                    // Format for Codex-CLI /v1/responses endpoint
+                    const sseData = {
+                      type: "response.output_text.delta",
+                      output_index: 0,
+                      content_index: 0,
+                      delta: data.response || ''
+                    };
+                    res.write(`data: ${JSON.stringify(sseData)}\n\n`);
+                  } else {
+                    // Standard OpenAI chat completions format
+                    const sseData = {
+                      id: `chatcmpl-${Date.now()}`,
+                      object: 'chat.completion.chunk',
+                      created: Math.floor(Date.now() / 1000),
+                      model: model,
+                      choices: [{
+                        index: 0,
+                        delta: {
+                          content: data.response || ''
+                        },
+                        finish_reason: data.done ? 'stop' : null
+                      }]
+                    };
+                    res.write(`data: ${JSON.stringify(sseData)}\n\n`);
+                  }
+                  
+                  if (data.done) {
+                    console.log('\n===== COMPLETE STREAMED RESPONSE =====');
+                    console.log(fullResponse);
+                    console.log('=====================================\n');
+                    
+                    // Send the final [DONE] message
+                    res.write('data: [DONE]\n\n');
+                    res.end();
+                    return;
+                  }
+                  
+                  // Recursively process more complete JSON objects if they exist
+                  processBuffer();
+                } catch (e) {
+                  console.error('Error parsing JSON:', e);
+                  console.error('Problematic JSON string:', jsonStr);
+                  // Continue with the rest of the buffer
+                  processBuffer();
+                }
+              }
+            };
+            
+            // Start processing the buffer
+            processBuffer();
+          } catch (e) {
+            console.error('Error processing stream chunk:', e);
+          }
+        });
+    
+        response.data.on('error', (err) => {
+          console.error('Stream error:', err);
+          res.end();
+        });
+        
+        response.data.on('end', () => {
+          // Handle any remaining data in the buffer if the stream ends
+          if (buffer.length > 0) {
+            try {
+              const data = JSON.parse(buffer);
               fullResponse += data.response || '';
               
               // Different SSE format based on request type
               if (isCodexRequest) {
-                // Format for Codex-CLI /v1/responses endpoint
+                // Format for Codex-CLI
                 const sseData = {
                   type: "response.output_text.delta",
                   output_index: 0,
@@ -177,7 +282,7 @@ if (req.body.stream === true) {
                 };
                 res.write(`data: ${JSON.stringify(sseData)}\n\n`);
               } else {
-                // Standard OpenAI chat completions format
+                // Standard OpenAI format
                 const sseData = {
                   id: `chatcmpl-${Date.now()}`,
                   object: 'chat.completion.chunk',
@@ -195,99 +300,30 @@ if (req.body.stream === true) {
               }
               
               if (data.done) {
-                console.log('\n===== COMPLETE STREAMED RESPONSE =====');
-                console.log(fullResponse);
-                console.log('=====================================\n');
-                
-                // Send the final [DONE] message
                 res.write('data: [DONE]\n\n');
-                res.end();
-                return;
               }
-              
-              // Recursively process more complete JSON objects if they exist
-              processBuffer();
             } catch (e) {
-              console.error('Error parsing JSON:', e);
-              console.error('Problematic JSON string:', jsonStr);
-              // Continue with the rest of the buffer
-              processBuffer();
+              console.error('Error processing final buffer:', e);
             }
           }
-        };
-        
-        // Start processing the buffer
-        processBuffer();
-      } catch (e) {
-        console.error('Error processing stream chunk:', e);
-      }
-    });
-
-    response.data.on('error', (err) => {
-      console.error('Stream error:', err);
-      res.end();
-    });
-    
-    response.data.on('end', () => {
-      // Handle any remaining data in the buffer if the stream ends
-      if (buffer.length > 0) {
-        try {
-          const data = JSON.parse(buffer);
-          fullResponse += data.response || '';
           
-          // Different SSE format based on request type
-          if (isCodexRequest) {
-            // Format for Codex-CLI
-            const sseData = {
-              type: "response.output_text.delta",
-              output_index: 0,
-              content_index: 0,
-              delta: data.response || ''
-            };
-            res.write(`data: ${JSON.stringify(sseData)}\n\n`);
-          } else {
-            // Standard OpenAI format
-            const sseData = {
-              id: `chatcmpl-${Date.now()}`,
-              object: 'chat.completion.chunk',
-              created: Math.floor(Date.now() / 1000),
-              model: model,
-              choices: [{
-                index: 0,
-                delta: {
-                  content: data.response || ''
-                },
-                finish_reason: data.done ? 'stop' : null
-              }]
-            };
-            res.write(`data: ${JSON.stringify(sseData)}\n\n`);
+          // End the response if not already ended
+          try {
+            res.end();
+          } catch (err) {
+            console.error('Error ending response:', err);
           }
-          
-          if (data.done) {
-            res.write('data: [DONE]\n\n');
+        });
+      } catch (error) {
+        console.error('Error initiating streaming request:', error);
+        res.status(500).json({
+          error: {
+            message: 'An error occurred while processing your streaming request',
+            type: 'server_error',
+            details: error.message
           }
-        } catch (e) {
-          console.error('Error processing final buffer:', e);
-        }
+        });
       }
-      
-      // End the response if not already ended
-      try {
-        res.end();
-      } catch (err) {
-        console.error('Error ending response:', err);
-      }
-    });
-  } catch (error) {
-    console.error('Error initiating streaming request:', error);
-    res.status(500).json({
-      error: {
-        message: 'An error occurred while processing your streaming request',
-        type: 'server_error',
-        details: error.message
-      }
-    });
-  }
     } else {
       // Regular non-streaming request
       const ollamaRequest = transformToOllamaRequest(req.body, model);
@@ -314,13 +350,18 @@ if (req.body.stream === true) {
 });
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+  // Refresh models list before responding
+  await fetchAvailableModels();
   res.json({ status: 'ok', models: AVAILABLE_MODELS });
 });
 
 // Start the server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Ollama OpenAI-compatible API running on port ${PORT}`);
-  console.log(`Available models: ${AVAILABLE_MODELS.join(', ')}`);
+  
+  // Initially fetch available models
+  await fetchAvailableModels();
+  
   console.log(`Make requests to http://localhost:${PORT}/v1/chat/completions`);
 });
