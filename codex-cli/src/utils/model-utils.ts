@@ -1,4 +1,6 @@
 import { OPENAI_API_KEY, OPENAI_BASE_URL } from "./config";
+// Supported DeepSeek model identifiers
+export const DEEPSEEK_MODELS: Array<string> = ["deepseek-chat", "deepseek-reasoner"];
 import OpenAI from "openai";
 
 const MODEL_LIST_TIMEOUT_MS = 2_000; // 2 seconds
@@ -46,6 +48,10 @@ export function preloadModels(): void {
 }
 
 export async function getAvailableModels(): Promise<Array<string>> {
+  // If targeting DeepSeek, return its fixed model list
+  if (OPENAI_BASE_URL.includes('api.deepseek.com')) {
+    return DEEPSEEK_MODELS;
+  }
   if (!modelsPromise) {
     modelsPromise = fetchModels();
   }
@@ -60,11 +66,14 @@ export async function getAvailableModels(): Promise<Array<string>> {
 export async function isModelSupportedForResponses(
   model: string | undefined | null,
 ): Promise<boolean> {
-  if (
-    typeof model !== "string" ||
-    model.trim() === "" ||
-    RECOMMENDED_MODELS.includes(model)
-  ) {
+  if (typeof model !== "string" || model.trim() === "") {
+    return true;
+  }
+  // Always allow DeepSeek models
+  if (DEEPSEEK_MODELS.includes(model.trim())) {
+    return true;
+  }
+  if (RECOMMENDED_MODELS.includes(model)) {
     return true;
   }
 

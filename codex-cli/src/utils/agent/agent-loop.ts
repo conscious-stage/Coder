@@ -127,7 +127,9 @@ export class AgentLoop {
     
     try {
       // If we're pointing at a local Ollama OpenAI-compatible API, use chat.completions
-      if (OPENAI_BASE_URL.startsWith('http://localhost')) {
+      const isOllamaLocal = OPENAI_BASE_URL.startsWith('http://localhost');
+      const isDeepseek = OPENAI_BASE_URL.includes('api.deepseek.com');
+      if (isOllamaLocal || isDeepseek) {
         // First, display the user input items in the chat
         for (const item of turnInput) {
           stageItem(item);

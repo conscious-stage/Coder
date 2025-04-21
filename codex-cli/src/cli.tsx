@@ -230,14 +230,16 @@ if (cli.flags.config) {
 const apiKey = process.env["OPENAI_API_KEY"];
 
 if (!apiKey) {
-  // eslint-disable-next-line no-console
   console.error(
-    `\n${chalk.red("Missing OpenAI API key.")}\n\n` +
-      `Set the environment variable ${chalk.bold("OPENAI_API_KEY")} ` +
-      `and re-run this command.\n` +
-      `You can create a key here: ${chalk.bold(
+    `
+${chalk.red("Missing OpenAI API key.")}
+
+Set the environment variable ${chalk.bold("OPENAI_API_KEY")} ` +
+      `and re-run this command.
+You can create a key here: ${chalk.bold(
         chalk.underline("https://platform.openai.com/account/api-keys"),
-      )}\n`,
+      )}
+`,
   );
   process.exit(1);
 }

@@ -37,6 +37,10 @@ export const OPENAI_TIMEOUT_MS =
 // Default points to http://localhost:3000/v1 where the Ollama API exposes OpenAI-compatible endpoints
 export const OPENAI_BASE_URL =
   process.env["OPENAI_BASE_URL"] || "http://localhost:3000/v1";
+// DeepSeek API configuration
+export const DEEPSEEK_BASE_URL =
+  process.env["DEEPSEEK_BASE_URL"] || "https://api.deepseek.com";
+export let DEEPSEEK_API_KEY = process.env["DEEPSEEK_API_KEY"] || "";
 export let OPENAI_API_KEY = process.env["OPENAI_API_KEY"] || "";
 
 export function setApiKey(apiKey: string): void {
