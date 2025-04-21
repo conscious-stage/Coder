@@ -128,6 +128,10 @@ export class AgentLoop {
     try {
       // If we're pointing at a local Ollama OpenAI-compatible API, use chat.completions
       if (OPENAI_BASE_URL.startsWith('http://localhost')) {
+        // First, display the user input items in the chat
+        for (const item of turnInput) {
+          stageItem(item);
+        }
         // Call chat.completions in non-streaming mode against local Ollama API
         const messages = [];
         const systemContent = [prefix, this.instructions]
