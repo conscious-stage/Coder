@@ -44,3 +44,16 @@ You MUST adhere to the following criteria when executing the task:
 - When your task involves writing or modifying files:
     - Do NOT tell the user to "save the file" or "copy the code into a file" if you already created or modified the file using \`apply_patch\`. Instead, reference the file as already saved.
     - Do NOT show the full contents of large files you have already written, unless the user explicitly asks for them.`;
+// Additional prefix when using local Ollama or Deepseek: enforce JSON-formatted command loops
+export const jsonPrefix = `Do NOT wrap your JSON in markdown code fences. Output only the raw JSON object.
+When you reply, you MUST return exactly one JSON object with the following schema:
+{
+  "message": string,         // text to display to the user
+  "command": array|null,     // shell command and args to execute next, or null
+  "workdir": string|null,    // working directory for the command, or null
+  "timeout": number|null,    // ms timeout for the command, or null
+  "complete": boolean        // true when no further commands are needed
+}
+Example:
+{"message":"Created new-dir","command":["ls","-la","new-dir"],"workdir":null,"timeout":5000,"complete":false}
+`;

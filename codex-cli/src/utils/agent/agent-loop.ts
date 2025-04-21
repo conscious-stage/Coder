@@ -1,6 +1,6 @@
 import { createOpenAIClient } from './api-client.js';
 import { handleFunctionCall } from './function-call-handler.js';
-import { prefix } from './prefix.js';
+import { prefix, jsonPrefix } from './prefix.js';
 import { processStream } from './stream-handler.js';
 import { handleAPIError, MAX_RETRIES, RATE_LIMIT_RETRY_WAIT_MS } from './error-handling.js';
 import { log, isLoggingEnabled } from './log.js';
@@ -130,40 +130,56 @@ export class AgentLoop {
       const isOllamaLocal = OPENAI_BASE_URL.startsWith('http://localhost');
       const isDeepseek = OPENAI_BASE_URL.includes('api.deepseek.com');
       if (isOllamaLocal || isDeepseek) {
-        // First, display the user input items in the chat
+        // JSON-driven command loop for local Ollama/Deepseek
+        // Build initial system+user messages
+        const messages = [];
+        const systemContent = [prefix, jsonPrefix, this.instructions].filter(Boolean).join('\n');
+        messages.push({ role: 'system', content: systemContent });
         for (const item of turnInput) {
           stageItem(item);
-        }
-        // Call chat.completions in non-streaming mode against local Ollama API
-        const messages = [];
-        const systemContent = [prefix, this.instructions]
-          .filter(Boolean)
-          .join('\n');
-        if (systemContent) messages.push({ role: 'system', content: systemContent });
-        for (const item of turnInput) {
           if ((item.type === 'message' && item.role === 'user') || item.type === 'input_text') {
             const text = item.type === 'input_text' ? item.text : item.content?.[0]?.text;
             if (text) messages.push({ role: 'user', content: text });
           }
         }
-        try {
-          const resp = await this.oai.chat.completions.create({
-            model: this.model,
-            stream: false,
-            messages,
-          });
-          const content = resp.choices?.[0]?.message?.content;
-          if (content) {
-            const msg = {
-              id: `ollama-${Date.now()}`,
-              type: 'message',
-              role: 'assistant',
-              content: [{ type: 'output_text', text: content }]
-            };
-            stageItem(msg);
+        // Loop: ask model, parse JSON, execute commands, feed back output
+        while (true) {
+          let resp;
+          try {
+            resp = await this.oai.chat.completions.create({
+              model: this.model,
+              stream: false,
+              messages,
+            });
+          } catch (err) {
+            await handleAPIError(err, this.onItem, this.onLoading);
+            return;
           }
-        } catch (err) {
-          await handleAPIError(err, this.onItem, this.onLoading);
+          const content = resp.choices?.[0]?.message?.content;
+          if (!content) break;
+          let obj;
+          try {
+            obj = JSON.parse(content);
+          } catch {
+            // not JSON: display raw and abort
+            stageItem({ id: `local-raw-${Date.now()}`, type: 'message', role: 'assistant', content: [{ type: 'output_text', text: content }] });
+            break;
+          }
+          // Display assistant message
+          if (obj.message) {
+            stageItem({ id: `local-msg-${Date.now()}`, type: 'message', role: 'assistant', content: [{ type: 'output_text', text: obj.message }] });
+          }
+          // If command present, execute
+          if (Array.isArray(obj.command) && obj.command.length > 0) {
+            const fakeCall = { name: 'shell', arguments: JSON.stringify({ command: obj.command, workdir: obj.workdir ?? undefined, timeout: obj.timeout ?? undefined }), call_id: `local-cmd-${Date.now()}` };
+            const results = await this.handleFunctionCall(fakeCall);
+            for (const item of results) stageItem(item);
+            // feed output back to model
+            const outputItem = results.find(i => i.type === 'function_call_output');
+            if (outputItem && typeof outputItem.output === 'string') messages.push({ role: 'user', content: outputItem.output });
+          }
+          // Stop if complete
+          if (obj.complete) break;
         }
         this.onLoading(false);
         return;
