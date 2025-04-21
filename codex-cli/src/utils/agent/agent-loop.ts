@@ -128,43 +128,36 @@ export class AgentLoop {
     try {
       // If we're pointing at a local Ollama OpenAI-compatible API, use chat.completions
       if (OPENAI_BASE_URL.startsWith('http://localhost')) {
-        // Build chat messages for Ollama: include agent prefix + user instructions
+        // Call chat.completions in non-streaming mode against local Ollama API
         const messages = [];
         const systemContent = [prefix, this.instructions]
           .filter(Boolean)
           .join('\n');
-        if (systemContent) {
-          messages.push({ role: 'system', content: systemContent });
-        }
+        if (systemContent) messages.push({ role: 'system', content: systemContent });
         for (const item of turnInput) {
-          // Unified user messages or input_text map to chat user content
           if ((item.type === 'message' && item.role === 'user') || item.type === 'input_text') {
-            const text =
-              item.type === 'input_text'
-                ? item.text
-                : item.content?.[0]?.text;
+            const text = item.type === 'input_text' ? item.text : item.content?.[0]?.text;
             if (text) messages.push({ role: 'user', content: text });
           }
         }
-        // Stream via chat.completions
-        const stream = await this.oai.chat.completions.create({
-          model: this.model,
-          stream: true,
-          messages,
-        });
-        // Stream each assistant delta as a message with unique id
-        let deltaCount = 0;
-        for await (const chunk of stream) {
-          const delta = chunk.choices?.[0]?.delta?.content;
-          if (delta) {
+        try {
+          const resp = await this.oai.chat.completions.create({
+            model: this.model,
+            stream: false,
+            messages,
+          });
+          const content = resp.choices?.[0]?.message?.content;
+          if (content) {
             const msg = {
-              id: `ollama-${Date.now()}-${deltaCount++}`,
+              id: `ollama-${Date.now()}`,
               type: 'message',
               role: 'assistant',
-              content: [{ type: 'output_text', text: delta }]
+              content: [{ type: 'output_text', text: content }]
             };
             stageItem(msg);
           }
+        } catch (err) {
+          await handleAPIError(err, this.onItem, this.onLoading);
         }
         this.onLoading(false);
         return;
