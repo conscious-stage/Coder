@@ -17,9 +17,9 @@ export default function TerminalChatPastRollout({
     <Box flexDirection="column">
       <Box borderStyle="round" paddingX={1} width={64}>
         <Text>
-          ● OpenAI <Text bold>Codex</Text>{" "}
+          ● Conscious Stage <Text bold>Open Codex</Text>{" "}
           <Text dimColor>
-            (research preview) <Text color="blueBright">v{version}</Text>
+            (fork from OpenAI Codex) <Text color="blueBright">v{version}</Text>
           </Text>
         </Text>
       </Box>
