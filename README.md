@@ -11,7 +11,7 @@ to interact with your local codebase. It supports three backends:
 
 ```bash
 git clone git@github.com:conscious-stage/coder.git
-cd Coder/coder-cli
+cd coder/coder-cli
 npm install
 npm run build
 ```
