@@ -11,6 +11,11 @@ import { randomUUID } from 'node:crypto';
 const alreadyProcessedResponses = new Set();
 
 export class AgentLoop {
+  // Flag and storage for local Ollama/Deepseek conversation history
+  // Flag indicating if using a local Ollama/Deepseek provider
+  private isLocalProvider = false;
+  // In-memory message history for local providers
+  private localMessages: Array<{ role: string; content: string; }> = [];
   constructor({
     model,
     instructions,
@@ -42,6 +47,11 @@ export class AgentLoop {
     
     this.sessionId = getSessionId() || randomUUID().replaceAll("-", "");
     this.oai = createOpenAIClient(this.config, this.sessionId);
+    // Initialize local provider message history for Ollama/Deepseek
+    this.isLocalProvider = OPENAI_BASE_URL.startsWith('http://localhost') || OPENAI_BASE_URL.includes('api.deepseek.com');
+    if (this.isLocalProvider) {
+      this.localMessages = [];
+    }
     
     setSessionId(this.sessionId);
     setCurrentModel(this.model);
@@ -131,17 +141,22 @@ export class AgentLoop {
       const isDeepseek = OPENAI_BASE_URL.includes('api.deepseek.com');
       if (isOllamaLocal || isDeepseek) {
         // JSON-driven command loop for local Ollama/Deepseek
-        // Build initial system+user messages
-        const messages = [];
-        const systemContent = [LLMPrefix, this.instructions].filter(Boolean).join('\n');
-        messages.push({ role: 'system', content: systemContent });
+        // Build messages from persisted history and new user messages
+        if (this.localMessages.length === 0) {
+          const systemContent = [LLMPrefix, this.instructions].filter(Boolean).join('\n');
+          this.localMessages.push({ role: 'system', content: systemContent });
+        }
+        // Append new user messages to history
         for (const item of turnInput) {
           stageItem(item);
           if ((item.type === 'message' && item.role === 'user') || item.type === 'input_text') {
             const text = item.type === 'input_text' ? item.text : item.content?.[0]?.text;
-            if (text) messages.push({ role: 'user', content: text });
+            if (text) {
+              this.localMessages.push({ role: 'user', content: text });
+            }
           }
         }
+        const messages = [...this.localMessages];
         // Loop: ask model, parse JSON, execute commands, feed back output
         while (true) {
           let resp;
@@ -168,6 +183,8 @@ export class AgentLoop {
           // Display assistant message
           if (obj.message) {
             stageItem({ id: `local-msg-${Date.now()}`, type: 'message', role: 'assistant', content: [{ type: 'output_text', text: obj.message }] });
+            // Persist assistant message to history
+            this.localMessages.push({ role: 'assistant', content: obj.message });
           }
           // If command present, execute
           if (Array.isArray(obj.command) && obj.command.length > 0) {
@@ -176,12 +193,21 @@ export class AgentLoop {
             for (const item of results) stageItem(item);
             // feed output back to model
             const outputItem = results.find(i => i.type === 'function_call_output');
-            if (outputItem && typeof outputItem.output === 'string') messages.push({ role: 'user', content: outputItem.output });
+            if (outputItem && typeof outputItem.output === 'string') {
+              messages.push({ role: 'user', content: outputItem.output });
+              // Persist command output to history
+              this.localMessages.push({ role: 'user', content: outputItem.output });
+            }
           }
           // Stop if complete
           if (obj.complete) break;
         }
         this.onLoading(false);
+        // DEBUG: dump in-memory local history to console in development
+        /* istanbul ignore next */
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔍 [AgentLoop] localMessages:', this.localMessages);
+        }
         return;
       }
       // Main loop processing input and responses (unified OpenAI API)
