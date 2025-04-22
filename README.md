@@ -25,7 +25,7 @@ npm run build
 • (Optional) Override the URL if needed:
   ```bash
   export OPENAI_BASE_URL="http://localhost:3000/v1"
-  // run the ollama server
+  # run the ollama server
   cd ollama-api
   npm install
   node api.js
