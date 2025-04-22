@@ -1,6 +1,6 @@
-# open-codex
+# Coder
 
-open-codex (Codex CLI) is a terminal-based coding assistant that leverages large language models
+coder (Codex CLI) is a terminal-based coding assistant forked from openai/codex that leverages large language models
 to interact with your local codebase. It supports three backends:
 
 - **Ollama**: run models locally via the Ollama API.
@@ -10,8 +10,8 @@ to interact with your local codebase. It supports three backends:
 ## Installation
 
 ```bash
-git clone https://github.com/openai/open-codex.git
-cd open-codex/codex-cli
+git clone https://github.com/openai/coder.git
+cd coder/coder-cli
 npm install
 npm run build
 ```
@@ -25,6 +25,10 @@ npm run build
 • (Optional) Override the URL if needed:
   ```bash
   export OPENAI_BASE_URL="http://localhost:3000/v1"
+  # run the ollama server
+  cd ollama-api
+  npm install
+  node api.js
   ```
 
 ### 2. DeepSeek API
