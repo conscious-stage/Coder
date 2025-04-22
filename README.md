@@ -10,7 +10,7 @@ to interact with your local codebase. It supports three backends:
 ## Installation
 
 ```bash
-git clone https://github.com/openai/coder.git
+git clone git@github.com:conscious-stage/Coder.git
 cd coder/coder-cli
 npm install
 npm run build
