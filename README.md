@@ -1,6 +1,6 @@
 # Coder
 
-coder (Codex CLI) is a terminal-based coding assistant forked from openai/codex that leverages large language models
+coder (Coder CLI) is a terminal-based coding assistant forked from openai/codex that leverages large language models
 to interact with your local codebase. It supports three backends:
 
 - **Ollama**: run models locally via the Ollama API.
