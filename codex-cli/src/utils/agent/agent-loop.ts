@@ -1,6 +1,6 @@
 import { createOpenAIClient } from './api-client.js';
 import { handleFunctionCall } from './function-call-handler.js';
-import { prefix, jsonPrefix } from './prefix.js';
+import { prefix, LLMPrefix } from './prefix.js';
 import { processStream } from './stream-handler.js';
 import { handleAPIError, MAX_RETRIES, RATE_LIMIT_RETRY_WAIT_MS } from './error-handling.js';
 import { log, isLoggingEnabled } from './log.js';
@@ -133,7 +133,7 @@ export class AgentLoop {
         // JSON-driven command loop for local Ollama/Deepseek
         // Build initial system+user messages
         const messages = [];
-        const systemContent = [jsonPrefix, this.instructions].filter(Boolean).join('\n');
+        const systemContent = [LLMPrefix, this.instructions].filter(Boolean).join('\n');
         messages.push({ role: 'system', content: systemContent });
         for (const item of turnInput) {
           stageItem(item);
