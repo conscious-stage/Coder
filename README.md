@@ -1,6 +1,6 @@
-# Coder
+# Coder 
 ![coder](https://github.com/user-attachments/assets/105895c5-2331-4261-a170-73806db8655a)
-coder (Coder CLI) is a terminal-based coding assistant forked from openai/codex that leverages large language models
+coder (Coder CLI) is a terminal-based developed by conscious stage coding assistant forked from openai/codex that leverages large language models
 to interact with your local codebase. It supports three backends:
 
 - **Ollama**: run models locally via the Ollama API.
